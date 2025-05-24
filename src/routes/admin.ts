@@ -51,9 +51,8 @@ export const adminRoutes = new Elysia({ prefix: '/api/admin' })
       const { username, email, password } = body; // `body` is already validated
 
       // Check for existing users (username or email)
-      // db.query(...).get() returns the first row or null.
-      const existingUser = db.query('SELECT id FROM users WHERE username = ?1 OR email = ?2').get(username, email);
-      if (existingUser) {
+      const { rows: existingUsers } = await query('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email]);
+      if (existingUsers.length > 0) {
         set.status = 409; // Conflict
         // Use the ConflictError class for consistency with global error handling
         throw new ConflictError('Username or email already exists.'); 
@@ -67,11 +66,11 @@ export const adminRoutes = new Elysia({ prefix: '/api/admin' })
 
       // Insert new user. Role is 'user', level is 'silver' by default.
       try {
-        // get() is appropriate for INSERT ... RETURNING
-        const newUser = db.prepare(
-          'INSERT INTO users (username, email, passwordHash, role, level) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id, username, email, role, level'
-        ).get(username, email, passwordHash, 'user', 'silver') as Static<typeof UserResponseSchema> | null;
-        // The `as Static<...>` provides type inference for newUser based on UserResponseSchema
+        const insertResult = await query(
+          'INSERT INTO users (username, email, passwordHash, role, level) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, role, level',
+          [username, email, passwordHash, 'user', 'silver']
+        );
+        const newUser = insertResult.rows[0] as Static<typeof UserResponseSchema> | undefined;
 
         if (!newUser) {
           // This should ideally not happen if the query is correct and DB is responsive,
